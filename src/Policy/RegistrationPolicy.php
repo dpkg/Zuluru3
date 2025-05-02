@@ -2,6 +2,7 @@
 namespace App\Policy;
 
 use App\Authorization\ContextResource;
+use App\Core\ModuleRegistry;
 use App\Exception\ForbiddenRedirectException;
 use App\Model\Entity\Registration;
 use Authorization\IdentityInterface;
@@ -67,7 +68,7 @@ class RegistrationPolicy extends AppPolicy {
 					['action' => 'checkout']);
 			} else {
 				throw new ForbiddenRedirectException(__('The payment deadline has passed. Please choose another payment option.'),
-					['action' => 'edit', 'registration' => $registration->id]);
+					['action' => 'edit', '?' => ['registration' => $registration->id]]);
 			}
 		}
 
@@ -122,15 +123,15 @@ class RegistrationPolicy extends AppPolicy {
 		$unaccounted = $registration->payment === 'Paid' && $registration->total_payment != $registration->total_amount;
 		if (!$unpaid && !$unaccounted) {
 			throw new ForbiddenRedirectException(__('This registration is marked as {0}.', __($registration->payment)),
-				['action' => 'view', 'registration' => $registration->id]);
+				['action' => 'view', '?' => ['registration' => $registration->id]]);
 		}
 		if ($registration->balance <= 0) {
 			throw new ForbiddenRedirectException(__('This registration is already paid in full; you may need to edit it manually to mark it as paid.'),
-				['action' => 'view', 'registration' => $registration->id]);
+				['action' => 'view', '?' => ['registration' => $registration->id]]);
 		}
 		if ($registration->payment === 'Waiting') {
 			throw new ForbiddenRedirectException(__('Payments cannot be added for registrations on the waiting list.'),
-				['action' => 'view', 'registration' => $registration->id]);
+				['action' => 'view', '?' => ['registration' => $registration->id]]);
 		}
 
 		return true;
@@ -161,4 +162,12 @@ class RegistrationPolicy extends AppPolicy {
 		return $identity->isManager();
 	}
 
+	public function canCancel(IdentityInterface $identity, Registration $registration): bool {
+		if (in_array($registration->getOriginal('payment'), Configure::read('registration_cancelled'))) {
+			return false;
+		}
+
+		$event_obj = ModuleRegistry::getInstance()->load("EventType:{$registration->event->event_type->type}");
+		return $event_obj->canCancel($registration);
+	}
 }

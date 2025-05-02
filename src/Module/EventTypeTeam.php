@@ -31,7 +31,7 @@ class EventTypeTeam extends EventType {
 
 		$rule = new ExistsIn(['division_id'], 'Divisions');
 		if (!$rule($entity, ['errorField' => 'division_id'])) {
-			$entity->setErrors('division_id', ['validDivision' => __('You must select a valid division.')]);
+			$entity->setError('division_id', ['validDivision' => __('You must select a valid division.')]);
 			$ret = false;
 		}
 
@@ -217,6 +217,23 @@ class EventTypeTeam extends EventType {
 			return false;
 		}
 		return parent::beforePaid($event, $registration, $options);
+	}
+
+	public function canCancel(Registration $registration): bool {
+		$team_id = collection($registration->responses)->firstMatch(['question_id' => TEAM_ID_CREATED]);
+		if (!$team_id) {
+			return true;
+		}
+
+		$team_id = (int)$team_id->answer_text;
+		$games = TableRegistry::getTableLocator()->get('Games')
+			->find()
+			->where(['OR' => ['home_team_id' => $team_id, 'away_team_id' => $team_id]])
+			->all()
+			->count();
+
+		// Team registrations, for teams that already have games scheduled, cannot be marked as refunded; it will delete the team record
+		return $games === 0;
 	}
 
 	public function beforeUnpaid(Event $event, Registration $registration, $options) {

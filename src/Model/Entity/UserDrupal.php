@@ -104,11 +104,19 @@ class UserDrupal extends User {
 		return $this->mail;
 	}
 
+	protected function getMerge() {
+		$fields = $this->getVisible();
+		$fields[] = 'name';
+		$fields[] = 'mail';
+
+		return $fields;
+	}
+
 	public function merge(User $new) {
 		parent::merge($new);
 
 		// We also need to copy over the password, but we can't set it directly, as it will be re-hashed
-		$this->_properties['pass'] = $new->pass;
+		$this->_fields['pass'] = $new->pass;
 		$this->setDirty('pass', true);
 
 		// TODOSECOND: Update users_roles record too

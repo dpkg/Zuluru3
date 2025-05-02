@@ -43,7 +43,7 @@ class UserDrupalTable extends UsersTable {
 	 * @param array $config The configuration for the Table.
 	 * @return void
 	 */
-	public function initialize(array $config) {
+	public function initialize(array $config): void {
 		parent::initialize($config);
 
 		$this->_initializeDrupal();
@@ -68,7 +68,7 @@ class UserDrupalTable extends UsersTable {
 	 * @param \ArrayObject $options The options passed to the delete method
 	 * @return bool
 	 */
-	public function beforeDelete(CakeEvent $cakeEvent, EntityInterface $entity, ArrayObject $options) {
+	public function beforeDelete(\Cake\Event\EventInterface $cakeEvent, EntityInterface $entity, ArrayObject $options) {
 		// TODOSECOND: Delete users_roles record too
 	}
 
@@ -80,13 +80,13 @@ class UserDrupalTable extends UsersTable {
 	 * @param \ArrayObject $options The options passed to the save method
 	 * @return void
 	 */
-	public function beforeSave(CakeEvent $cakeEvent, EntityInterface $entity, ArrayObject $options) {
+	public function beforeSave(\Cake\Event\EventInterface $cakeEvent, EntityInterface $entity, ArrayObject $options) {
 		if ($entity->isNew()) {
 			// Drupal doesn't use auto increment on the uid column.
 			// This hack is adapted from Drupal's methods...
 			// It will leave extra records in the sequences table,
 			// but Drupal will take care of that for us.
-			$sequences_table = TableRegistry::getTableLocator()->get(Configure::read('Security.drupalPrefix') . 'sequences');
+			$sequences_table = TableRegistry::getTableLocator()->get('DrupalSequences');
 			$sequence = $sequences_table->newEntity(['value' => null]);
 			if (!$sequences_table->save($sequence)) {
 				return false;
@@ -116,8 +116,14 @@ class UserDrupalTable extends UsersTable {
 		// We can't just call drupal_settings_initialize, because that will use the
 		// entire URL including Zuluru subfolder when calculating the session name
 		// in the case where the cookie_domain isn't set in the settings.php.
-		if (!isset($cookie_domain) && !empty($_SERVER['HTTP_HOST'])) {
-			$cookie_domain = $_SERVER['HTTP_HOST'];
+		if (!isset($cookie_domain)) {
+			if (!empty($_SERVER['HTTP_HOST'])) {
+				$cookie_domain = $_SERVER['HTTP_HOST'];
+			} else {
+				$parts = parse_url(Configure::read('App.fullBaseUrl'));
+				$cookie_domain = $parts['host'] ?? '';
+			}
+
 			// Strip leading periods, www., and port numbers from cookie domain.
 			$cookie_domain = ltrim($cookie_domain, '.');
 			if (strpos($cookie_domain, 'www.') === 0) {

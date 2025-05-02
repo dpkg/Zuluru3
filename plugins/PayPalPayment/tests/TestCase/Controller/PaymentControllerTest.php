@@ -1,8 +1,16 @@
 <?php
 namespace PayPalPayment\Test\TestCase\Controller;
 
+use App\Model\Entity\Registration;
+use App\Test\Factory\PluginFactory;
+use App\Test\Factory\RegistrationAuditFactory;
+use App\Test\Scenario\DiverseRegistrationsScenario;
+use App\Test\Scenario\DiverseUsersScenario;
 use App\Test\TestCase\Controller\ControllerTestCase;
+use Cake\Controller\Controller;
+use Cake\Event\EventInterface;
 use Cake\ORM\TableRegistry;
+use CakephpFixtureFactories\Scenario\ScenarioAwareTrait;
 use PayPalPayment\Test\Mock;
 
 /**
@@ -12,6 +20,10 @@ use PayPalPayment\Test\Mock;
  */
 class PaymentControllerTest extends ControllerTestCase {
 
+	use ScenarioAwareTrait;
+
+	private Registration $membership;
+
 	/**
 	 * Fixtures
 	 *
@@ -19,40 +31,19 @@ class PaymentControllerTest extends ControllerTestCase {
 	 */
 	public $fixtures = [
 		'app.EventTypes',
-		'app.Affiliates',
-			'app.Users',
-				'app.People',
-					'app.AffiliatesPeople',
-					'app.PeoplePeople',
-			'app.Groups',
-				'app.GroupsPeople',
-			'app.Leagues',
-				'app.Divisions',
-					'app.Teams',
-			'app.Questions',
-				'app.Answers',
-			'app.Questionnaires',
-				'app.QuestionnairesQuestions',
-			'app.Events',
-				'app.Prices',
-					'app.Registrations',
-						'app.Payments',
-							'app.RegistrationAudits',
-						'app.Responses',
-				'app.Preregistrations',
-			'app.Settings',
-		'app.I18n',
-
+		'app.UserGroups',
+		'app.Settings',
 	];
 
 	/**
 	 * Set up the mock API object to avoid talking to the PayPal servers
 	 */
-	public function controllerSpy($event, $controller = null) {
+	public function controllerSpy(EventInterface $event, ?Controller $controller = null): void {
 		parent::controllerSpy($event, $controller);
 
 		if (isset($this->_controller)) {
-			$this->_controller->api = Mock::setup($this);
+			$this->_controller->api = Mock::setup($this, $this->membership)
+				->setTest(true);
 
 		}
 	}
@@ -62,17 +53,54 @@ class PaymentControllerTest extends ControllerTestCase {
 	 *
 	 * @return void
 	 */
-	public function testIndexAsCaptain() {
-		// PayPal sends parameters in the URL.
-		$this->assertGetAsAccessOk(['plugin' => 'PayPalPayment', 'controller' => 'Payment', 'action' => 'index', 'token' => 'TESTING'], PERSON_ID_CAPTAIN);
+	public function testIndexAsPlayer() {
+		PluginFactory::make(['name' => 'PayPal', 'load_name' => 'PayPalPayment', 'path' => 'plugins/PayPalPayment'])
+			->persist();
+		[$admin, $player] = $this->loadFixtureScenario(DiverseUsersScenario::class, ['admin', 'player']);
+		$registrations = $this->loadFixtureScenario(DiverseRegistrationsScenario::class, [
+			'affiliate' => $admin->affiliates[0],
+			'member' => $player,
+		]);
+		$this->membership = $registrations[DiverseRegistrationsScenario::$MEMBERSHIP];
 
-		$registration = TableRegistry::getTableLocator()->get('Registrations')->get(REGISTRATION_ID_CAPTAIN_MEMBERSHIP, [
+		// PayPal sends parameters in the URL.
+		$this->assertGetAsAccessOk(['plugin' => 'PayPalPayment', 'controller' => 'Payment', 'action' => 'index', '?' => ['token' => 'TESTING']], $player->id);
+
+		$registration = TableRegistry::getTableLocator()->get('Registrations')->get($this->membership->id, [
 			'contain' => ['Payments']
 		]);
 		$this->assertResponseContains('Your Transaction has been Approved');
 		$this->assertResponseNotContains('Your payment was declined');
 		$this->assertEquals('Paid', $registration->payment);
-		$this->assertEquals(3, count($registration->payments));
+		$this->assertCount(1, $registration->payments);
+	}
+
+	/**
+	 * Test a duplicate payment as a logged in user
+	 *
+	 * @return void
+	 */
+	public function testDuplicateAsPlayer() {
+		PluginFactory::make(['name' => 'PayPal', 'load_name' => 'PayPalPayment', 'path' => 'plugins/PayPalPayment'])
+			->persist();
+		[$admin, $player] = $this->loadFixtureScenario(DiverseUsersScenario::class, ['admin', 'player']);
+		$registrations = $this->loadFixtureScenario(DiverseRegistrationsScenario::class, [
+			'affiliate' => $admin->affiliates[0],
+			'member' => $player,
+		]);
+		$this->membership = $registrations[DiverseRegistrationsScenario::$MEMBERSHIP];
+
+		// This is the transaction ID that the mocked service returns
+		RegistrationAuditFactory::make(['transaction_id' => '1234567890'])->persist();
+
+		// PayPal sends parameters in the URL.
+		$this->assertGetAsAccessRedirect(['plugin' => 'PayPalPayment', 'controller' => 'Payment', 'action' => 'index', '?' => ['token' => 'TESTING']],
+			$player->id, '/', 'Duplicate transaction detected');
+
+		$registration = TableRegistry::getTableLocator()->get('Registrations')->get($this->membership->id, [
+			'contain' => ['Payments']
+		]);
+		$this->assertEmpty($registration->payments);
 	}
 
 	/**
@@ -81,8 +109,17 @@ class PaymentControllerTest extends ControllerTestCase {
 	 * @return void
 	 */
 	public function testIndexAsAnonymous() {
+		PluginFactory::make(['name' => 'PayPal', 'load_name' => 'PayPalPayment', 'path' => 'plugins/PayPalPayment'])
+			->persist();
+		[$admin, $player] = $this->loadFixtureScenario(DiverseUsersScenario::class, ['admin', 'player']);
+		$registrations = $this->loadFixtureScenario(DiverseRegistrationsScenario::class, [
+			'affiliate' => $admin->affiliates[0],
+			'member' => $player,
+		]);
+		$this->membership = $registrations[DiverseRegistrationsScenario::$MEMBERSHIP];
+
 		// PayPal sends parameters in the URL.
-		$this->assertGetAnonymousAccessDenied(['plugin' => 'PayPalPayment', 'controller' => 'Payment', 'action' => 'index', 'token' => 'TESTING']);
+		$this->assertGetAnonymousAccessDenied(['plugin' => 'PayPalPayment', 'controller' => 'Payment', 'action' => 'index', '?' => ['token' => 'TESTING']]);
 	}
 
 }

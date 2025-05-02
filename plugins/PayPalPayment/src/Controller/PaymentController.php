@@ -2,6 +2,7 @@
 namespace PayPalPayment\Controller;
 
 use App\Controller\PaymentsTrait;
+use App\Exception\ForbiddenRedirectException;
 use Cake\Core\Configure;
 use PayPalPayment\Http\API;
 
@@ -39,9 +40,9 @@ class PaymentController extends AppController {
 	 * @return void
 	 * @throws \Exception
 	 */
-	public function initialize() {
+	public function initialize(): void {
 		parent::initialize();
-		$this->loadModel('Registrations');
+		$this->Registrations = $this->fetchTable('Registrations');
 	}
 
 	public function index() {
@@ -53,6 +54,15 @@ class PaymentController extends AppController {
 		// PayPal sends data back through the URL
 		$data = $this->getRequest()->getQueryParams();
 		[$result, $audit, $registration_ids, $debit_ids] = $this->getAPI(API::isTestData($data))->parsePayment($data);
+
+		// PayPal sometimes sends duplicate notifications of payments processed?
+		$existing = $this->Registrations->Payments->RegistrationAudits->find()
+			->where(['transaction_id' => $audit['transaction_id']])
+			->first();
+		if ($existing) {
+			throw new ForbiddenRedirectException('Duplicate transaction detected');
+		}
+
 		$this->_processPayment($result, $audit, $registration_ids, $debit_ids);
 	}
 

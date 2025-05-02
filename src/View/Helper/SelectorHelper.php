@@ -115,7 +115,7 @@ class SelectorHelper extends Helper {
 
 	private function value(object $item, $value) {
 		if (is_string($value)) {
-			return $item->$value;
+			return (string)$item->$value;
 		}
 
 		if (is_callable($value)) {
@@ -140,7 +140,7 @@ class SelectorHelper extends Helper {
 		$new_options = [];
 		foreach ($options as $option) {
 			$value = $option['value'];
-			$classes = collection($option['ids'])->extract(function (int $id) { return "select_radio_id_{$id}"; })->toArray();
+			$classes = collection($option['ids'])->extract(function (int $id) { return "select_radio_id_{$id} option_radio_id_{$id}"; })->toArray();
 			$class = implode(' ', $classes);
 
 			$new_options[] = [
